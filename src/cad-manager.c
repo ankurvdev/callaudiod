@@ -17,6 +17,8 @@
 
 typedef struct _CadManager {
     CallAudioDbusCallAudioSkeleton parent;
+
+    gboolean routing_disabled;
 } CadManager;
 
 static void cad_manager_call_audio_iface_init(CallAudioDbusCallAudioIface *iface);
@@ -55,6 +57,7 @@ static gboolean cad_manager_handle_select_mode(CallAudioDbusCallAudio *object,
                                                guint mode)
 {
     CadOperation *op;
+    CadManager *self = CAD_MANAGER(object);
 
     switch ((CallAudioMode)mode) {
     case CALL_AUDIO_MODE_DEFAULT:
@@ -65,6 +68,11 @@ static gboolean cad_manager_handle_select_mode(CallAudioDbusCallAudio *object,
         g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR,
                                               G_DBUS_ERROR_INVALID_ARGS,
                                               "Invalid mode %u", mode);
+        return TRUE;
+    }
+
+    if (self->routing_disabled) {
+        call_audio_dbus_call_audio_complete_select_mode(object, invocation, TRUE);
         return TRUE;
     }
 
@@ -156,6 +164,7 @@ static void cad_manager_class_init(CadManagerClass *klass)
 
 static void cad_manager_init(CadManager *self)
 {
+    self->routing_disabled = FALSE;
 }
 
 CadManager *cad_manager_get_default(void)
@@ -169,4 +178,9 @@ CadManager *cad_manager_get_default(void)
     }
 
     return manager;
+}
+
+void cad_manager_disable_routing(CadManager *manager)
+{
+    manager->routing_disabled = TRUE;
 }

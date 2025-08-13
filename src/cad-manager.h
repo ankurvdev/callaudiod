@@ -19,5 +19,6 @@ G_DECLARE_FINAL_TYPE(CadManager, cad_manager, CAD, MANAGER,
                      CallAudioDbusCallAudioSkeleton);
 
 CadManager *cad_manager_get_default(void);
+void cad_manager_disable_routing(CadManager *manager);
 
 G_END_DECLS

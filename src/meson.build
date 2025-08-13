@@ -7,6 +7,7 @@
 
 cad_deps = [
     dependency('alsa'),
+    dependency('appstream'),
     dependency('gobject-2.0'),
     dependency('gio-unix-2.0'),
     dependency('libpulse'),

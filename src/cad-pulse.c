@@ -15,7 +15,9 @@
 #include <pulse/pulseaudio.h>
 #include <pulse/glib-mainloop.h>
 #include <alsa/use-case.h>
+#include <appstream.h>
 
+#include <dlfcn.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -557,6 +559,30 @@ static void init_module_info(pa_context *ctx, const pa_module_info *info, int eo
     }
 }
 
+static void init_server_info(pa_context *ctx, const pa_server_info *info, void *data)
+{
+    CadPulse *self = data;
+    static void *wireplumber_dll;
+
+    if (g_strrstr(info->server_name, "Pipewire") == NULL)
+        return;
+
+    if (!wireplumber_dll)
+       wireplumber_dll = dlopen("libwireplumber-0.5.so.0", RTLD_LAZY|RTLD_NODELETE);
+
+    if (wireplumber_dll) {
+        const char *(*wp_ver_sym)(void);
+
+        wp_ver_sym = dlsym(wireplumber_dll, "wp_get_library_version");
+        // 0.5.10 is the last release without routing support
+        // If the version is greater, and we're using Pipewire, assume WP
+        // is in charge of the routing.
+        if (wp_ver_sym && (as_vercmp_simple(wp_ver_sym(), "0.5.10") > 0)) {
+            cad_manager_disable_routing(CAD_MANAGER (self->manager));
+        }
+    }
+}
+
 static gboolean init_pulseaudio_objects(gpointer data)
 {
     CadPulse *self = data;
@@ -569,6 +595,9 @@ static gboolean init_pulseaudio_objects(gpointer data)
     if (op)
         pa_operation_unref(op);
     op = pa_context_get_module_info_list(self->ctx, init_module_info, self);
+    if (op)
+        pa_operation_unref(op);
+    op = pa_context_get_server_info(self->ctx, init_server_info, self);
     if (op)
         pa_operation_unref(op);
 
@@ -724,10 +753,8 @@ static void dispose(GObject *object)
     GObjectClass *parent_class = g_type_class_peek(G_TYPE_OBJECT);
     CadPulse *self = CAD_PULSE(object);
 
-    if (self->speaker_port)
-        g_free(self->speaker_port);
-    if (self->earpiece_port)
-        g_free(self->earpiece_port);
+    g_clear_pointer(&self->speaker_port, g_free);
+    g_clear_pointer(&self->earpiece_port, g_free);
 
     pulseaudio_cleanup(self);
 

@@ -10,6 +10,7 @@
 
 #include <glib.h>
 
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
 int main (int argc, char *argv[0])
 {
     g_autoptr(GOptionContext) opt_context = NULL;
@@ -78,3 +79,4 @@ int main (int argc, char *argv[0])
     call_audio_deinit ();
     return 0;
 }
+G_GNUC_END_IGNORE_DEPRECATIONS

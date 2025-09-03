@@ -6,6 +6,19 @@ It provides a D-Bus interface allowing other programs to:
   * output audio to the speaker or back to its original port
   * mute the microphone
 
+## Deprecation notice
+
+`callaudiod` and all its functionality is currently deprecated. Support for
+switching audio profiles during phone calls is now upstream in WirePlumber. For
+other functionality:
+
+* Use the simple pulseaudio API (`pa_context_set_source_mute_by_*`) for muting
+  devices.
+* Add support for changing to speaker in your applications. There might be
+  support for it in the future in
+  [pipewire](https://gitlab.freedesktop.org/pipewire/pipewire/-/issues/4868),
+  but that is not warrantied.
+
 ## Dependencies
 
 `callaudiod` requires the following development libraries:

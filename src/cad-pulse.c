@@ -383,7 +383,7 @@ static void init_sink_info(pa_context *ctx, const pa_sink_info *info, int eol, v
 
         switch (self->audio_mode) {
         case CALL_AUDIO_MODE_CALL:
-            if (g_strcmp0(info->active_port->name, self->speaker_port) == 0) {
+            if (info->active_port && g_strcmp0(info->active_port->name, self->speaker_port) == 0) {
                 self->speaker_state = CALL_AUDIO_SPEAKER_ON;
                 g_object_set(self->manager, "speaker-state", self->speaker_state, NULL);
                 /*
@@ -406,7 +406,7 @@ static void init_sink_info(pa_context *ctx, const pa_sink_info *info, int eol, v
              * Note: this code path is only used when the card doesn't have a
              * voice profile, otherwise things are easier to deal with.
              */
-            if (g_strcmp0(info->active_port->name, self->earpiece_port) == 0) {
+            if (info->active_port && g_strcmp0(info->active_port->name, self->earpiece_port) == 0) {
                 self->audio_mode = CALL_AUDIO_MODE_CALL;
                 g_object_set(self->manager, "audio-mode", self->audio_mode, NULL);
                 /*

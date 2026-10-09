@@ -912,6 +912,96 @@ static void set_card_profile(pa_context *ctx, const pa_card_info *info, int eol,
     }
 }
 
+static gboolean is_output_target_port(const pa_card_port_info *port, gboolean speaker)
+{
+    if (port->direction != PA_DIRECTION_OUTPUT || port->available == PA_PORT_AVAILABLE_NO)
+        return FALSE;
+
+    if (speaker)
+        return port->type == PA_DEVICE_PORT_TYPE_SPEAKER;
+
+    return port->type == PA_DEVICE_PORT_TYPE_EARPIECE ||
+           port->type == PA_DEVICE_PORT_TYPE_HANDSET ||
+           port->type == PA_DEVICE_PORT_TYPE_HEADPHONES;
+}
+
+/*
+ * With PipeWire (and PulseAudio >= 15), every UCM device gets its own mapping:
+ * an earpiece and a speaker sharing one PCM end up in different profiles of the
+ * same verb (e.g. "Voice Call (Earpiece, Mic)" and "Voice Call (Mic, Speaker)")
+ * instead of being ports of one sink. Switch to the profile of the current verb
+ * that provides the wanted output.
+ */
+static void set_card_profile_for_output(pa_context *ctx, const pa_card_info *info, int eol, void *data)
+{
+    CadPulseOperation *operation = data;
+    const pa_card_profile_info2 *active;
+    const char *target_profile = NULL;
+    uint32_t target_priority = 0, port_priority = 0;
+    pa_operation *op = NULL;
+    size_t verb_len;
+
+    if (eol != 0)
+        return;
+
+    if (!info) {
+        g_critical("PA returned no card info (eol=%d)", eol);
+        return;
+    }
+
+    if (info->index != operation->pulse->card_id)
+        return;
+
+    active = info->active_profile2;
+    verb_len = strcspn(active->name, "(");
+
+    for (uint32_t i = 0; i < info->n_ports; i++) {
+        const pa_card_port_info *port = info->ports[i];
+
+        if (!is_output_target_port(port, operation->value != 0))
+            continue;
+
+        for (uint32_t j = 0; j < port->n_profiles; j++) {
+            const pa_card_profile_info2 *profile = port->profiles2[j];
+
+            if (!profile->available || strncmp(profile->name, active->name, verb_len) != 0)
+                continue;
+
+            if (port->priority > port_priority ||
+                (port->priority == port_priority && profile->priority > target_priority)) {
+                target_profile = profile->name;
+                target_priority = profile->priority;
+                port_priority = port->priority;
+            }
+        }
+    }
+
+    if (target_profile && g_strcmp0(target_profile, active->name) != 0) {
+        g_debug("switching to profile '%s' for %s output", target_profile,
+                operation->value ? "speaker" : "non-speaker");
+        op = pa_context_set_card_profile_by_index(ctx, operation->pulse->card_id,
+                                                  target_profile,
+                                                  operation_complete_cb, operation);
+    }
+
+    if (op) {
+        pa_operation_unref(op);
+    } else {
+        g_debug("%s: nothing to be done", __func__);
+        operation_complete_cb(ctx, 1, operation);
+    }
+}
+
+static gboolean sink_has_port(const pa_sink_info *info, const gchar *name)
+{
+    for (uint32_t i = 0; name && i < info->n_ports; i++) {
+        if (g_strcmp0(info->ports[i]->name, name) == 0)
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
 static void set_output_port(pa_context *ctx, const pa_sink_info *info, int eol, void *data)
 {
     CadPulseOperation *operation = data;
@@ -955,6 +1045,17 @@ static void set_output_port(pa_context *ctx, const pa_sink_info *info, int eol, 
     }
 
     g_debug("active port is '%s', target port is '%s'", info->active_port->name, target_port);
+
+    if (operation->op && operation->op->type == CAD_OPERATION_ENABLE_SPEAKER &&
+        !sink_has_port(info, target_port)) {
+        /* The wanted output is not a port of this sink: look in other profiles */
+        op = pa_context_get_card_info_by_index(ctx, operation->pulse->card_id,
+                                               set_card_profile_for_output, operation);
+        if (op) {
+            pa_operation_unref(op);
+            return;
+        }
+    }
 
     if (target_port && g_strcmp0(info->active_port->name, target_port) != 0) {
         g_debug("switching to target port '%s'", target_port);
